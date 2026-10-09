@@ -1025,6 +1025,39 @@ static bool32 rasterRenderFast(Raster *raster, int32 x, int32 y)
 	}
 }
 
+static bool makeVideoModeList(void)
+{
+	ctx.monitor = glfwGetPrimaryMonitor();
+	if (!ctx.monitor)
+		return false;
+	const GLFWvidmode *desktop = glfwGetVideoMode(ctx.monitor);
+	if (!desktop)
+		return false;
+	ctx.modes.clear();
+	ctx.currentMode = 0;
+	DisplayMode windowed = {*desktop, 0};
+	windowed.mode.width = ctx.params.width;
+	windowed.mode.height = ctx.params.height;
+	ctx.modes.push_back(windowed);
+	int count = 0;
+	const GLFWvidmode *modes = glfwGetVideoModes(ctx.monitor, &count);
+	for (int i = 0; i < count; i++) {
+		bool found = false;
+		for (size_t j = 1; j < ctx.modes.size(); j++) {
+			GLFWvidmode &mode = ctx.modes[j].mode;
+			if (mode.width == modes[i].width && mode.height == modes[i].height) {
+				if (mode.refreshRate < modes[i].refreshRate)
+					mode = modes[i];
+				found = true;
+				break;
+			}
+		}
+		if (!found)
+			ctx.modes.push_back({modes[i], VIDEOMODEEXCLUSIVE});
+	}
+	return true;
+}
+
 static int deviceSystem(DeviceReq request, void *arg, int32 n)
 {
 	@autoreleasepool {
@@ -1037,6 +1070,13 @@ static int deviceSystem(DeviceReq request, void *arg, int32 n)
 			ctx.device = MTLCreateSystemDefaultDevice();
 			if (!ctx.device) {
 				reportError("No Metal device available");
+				glfwTerminate();
+				return 0;
+			}
+			if (!makeVideoModeList()) {
+				reportError("Could not enumerate display modes");
+				ctx.device = nil;
+				glfwTerminate();
 				return 0;
 			}
 			ctx.name = ctx.device.name.UTF8String;
@@ -1044,8 +1084,15 @@ static int deviceSystem(DeviceReq request, void *arg, int32 n)
 		case DEVICEINIT: {
 			ctx.failed = false;
 			glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-			ctx.window = glfwCreateWindow(ctx.params.width, ctx.params.height,
-										  ctx.params.windowtitle, nullptr, nullptr);
+			const DisplayMode &mode = ctx.modes[ctx.currentMode];
+			glfwWindowHint(GLFW_RED_BITS, mode.mode.redBits);
+			glfwWindowHint(GLFW_GREEN_BITS, mode.mode.greenBits);
+			glfwWindowHint(GLFW_BLUE_BITS, mode.mode.blueBits);
+			glfwWindowHint(GLFW_REFRESH_RATE, mode.mode.refreshRate);
+			ctx.window = glfwCreateWindow(mode.mode.width, mode.mode.height,
+											  ctx.params.windowtitle,
+											  mode.flags & VIDEOMODEEXCLUSIVE ? ctx.monitor : nullptr,
+											  nullptr);
 			if (!ctx.window) {
 				reportError("Could not create window");
 				return 0;
@@ -1128,6 +1175,9 @@ static int deviceSystem(DeviceReq request, void *arg, int32 n)
 			return 1;
 		case DEVICECLOSE:
 			ctx.device = nil;
+			ctx.modes.clear();
+			ctx.monitor = nullptr;
+			glfwTerminate();
 			return 1;
 		case DEVICEGETNUMSUBSYSTEMS:
 			return 1;
@@ -1140,14 +1190,20 @@ static int deviceSystem(DeviceReq request, void *arg, int32 n)
 					 ctx.name.c_str());
 			return 1;
 		case DEVICEGETNUMVIDEOMODES:
-			return 1;
+			return ctx.modes.size();
 		case DEVICEGETCURRENTVIDEOMODE:
-			return 0;
+			return ctx.currentMode;
 		case DEVICESETVIDEOMODE:
-			return n == 0;
+			if (Engine::state != Engine::Opened || n < 0 || size_t(n) >= ctx.modes.size())
+				return 0;
+			ctx.currentMode = n;
+			return 1;
 		case DEVICEGETVIDEOMODEINFO:
-			*(VideoMode *)arg = {ctx.params.width, ctx.params.height, 32, 0};
-			return n == 0;
+			if (n < 0 || size_t(n) >= ctx.modes.size())
+				return 0;
+			*(VideoMode *)arg = {ctx.modes[n].mode.width, ctx.modes[n].mode.height, 32,
+								ctx.modes[n].flags};
+			return 1;
 		case DEVICEGETMAXMULTISAMPLINGLEVELS:
 			for (int sample = 8; sample >= 1; sample /= 2)
 				if ([ctx.device supportsTextureSampleCount:sample])

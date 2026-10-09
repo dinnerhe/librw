@@ -47,6 +47,10 @@ struct GeometryData : rw::InstanceDataHeader {
 	std::vector<MeshData> meshes;
 	MTLPrimitiveType primitive;
 };
+struct DisplayMode {
+	GLFWvidmode mode;
+	uint32 flags;
+};
 struct Context {
 	id<MTLDevice> device;
 	id<MTLCommandQueue> queue;
@@ -57,6 +61,9 @@ struct Context {
 	GLFWwindow *window = nullptr;
 	GLFWwindow **windowOut = nullptr;
 	EngineOpenParams params;
+	GLFWmonitor *monitor = nullptr;
+	std::vector<DisplayMode> modes;
+	int currentMode = 0;
 	id<MTLTexture> backColor, backDepth, backMultisample, color, depth, renderColor;
 	Camera *camera = nullptr;
 	Rect viewport = {};

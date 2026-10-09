@@ -552,6 +552,29 @@ static void pipelines(void)
 	destroyAtomic(a);
 	env->destroy();
 }
+static void videoModes(void)
+{
+	int count = Engine::getNumVideoModes();
+	require(count > 1, "windowed and fullscreen video modes");
+	require(Engine::getCurrentVideoMode() == 0, "default windowed video mode");
+	VideoMode mode = {};
+	require(Engine::getVideoModeInfo(&mode, 0) != nullptr && mode.width == 64 &&
+			mode.height == 64 && mode.depth == 32 && mode.flags == 0,
+			"windowed mode retains requested dimensions");
+	for (int i = 1; i < count; i++) {
+		require(Engine::getVideoModeInfo(&mode, i) != nullptr && mode.width > 0 &&
+				mode.height > 0 && mode.depth == 32 && mode.flags == VIDEOMODEEXCLUSIVE,
+				"fullscreen mode properties");
+	}
+	require(Engine::setVideoMode(count - 1) && Engine::getCurrentVideoMode() == count - 1,
+			"select fullscreen mode before start");
+	require(!Engine::setVideoMode(-1) && !Engine::setVideoMode(count) &&
+			Engine::getCurrentVideoMode() == count - 1, "invalid mode preserves selection");
+	require(Engine::getVideoModeInfo(&mode, -1) == nullptr &&
+			Engine::getVideoModeInfo(&mode, count) == nullptr, "invalid video mode queries");
+	require(Engine::setVideoMode(0), "restore windowed mode for pixel tests");
+}
+
 int main(int argc, char **argv)
 {
 	require(Engine::init(), "engine init");
@@ -562,11 +585,14 @@ int main(int argc, char **argv)
 	registerMatFXPlugin();
 	EngineOpenParams params = {&window, 64, 64, "librw Metal tests"};
 	require(Engine::open(&params), "engine open");
+	videoModes();
 	int samples = argc > 1 ? atoi(argv[1]) : 1;
 	require(Engine::getMaxMultiSamplingLevels() >= uint32(samples), "sample count supported");
 	require(Engine::setMultiSamplingLevels(samples), "set sample count before start");
 	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 	require(Engine::start(), "engine start");
+	require(glfwGetWindowMonitor(window) == nullptr, "windowed mode creates windowed surface");
+	require(!Engine::setVideoMode(1), "video mode changes require engine restart");
 	printf("Native Metal tests on %s\n", metal::getDeviceName());
 	camera = makeCamera(64, 64);
 	renderStates();

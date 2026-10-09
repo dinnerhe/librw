@@ -53,6 +53,8 @@ include the viewer UI. The viewer prints the native GPU name and model counts.
   scissoring, and GPU raster copying.
 - Device-supported MSAA sample counts. Set the sample count through
   `Engine::setMultiSamplingLevels` after `Engine::open` and before `Engine::start`.
+- Windowed and primary-monitor fullscreen video modes, selected while the
+  engine is open and applied at startup. Mode changes require an engine restart.
 - Texture/image upload and readback, mipmaps, sampling modes, and common
   RenderWare pixel formats. Palettized and compressed source textures are
   decoded through the existing image conversion code. GPU storage is RGBA8.
@@ -89,7 +91,7 @@ CTest enables Metal API validation and runs the same suite with one sample and
 4× MSAA. It checks depth, blending, alpha tests, stencil, scissoring, texture
 orientation and formats, mipmaps, TXD round trips, default/native DFF geometry,
 geometry buffer replacement, skin poses, environment mapping, lighting, fog,
-subcamera clears/readback, and GPU raster copying.
+subcamera clears/readback, GPU raster copying, and video-mode selection.
 
 To embed librw, use `librw::librw` from CMake. Public headers remain C++ and do not
 require Objective-C++. `rw::metal::waitIdle()` waits for GPU work and returns false
