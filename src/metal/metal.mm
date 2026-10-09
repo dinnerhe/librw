@@ -1039,6 +1039,9 @@ static bool makeVideoModeList(void)
 	windowed.mode.width = ctx.params.width;
 	windowed.mode.height = ctx.params.height;
 	ctx.modes.push_back(windowed);
+	// On macOS, the current scaled desktop mode may be absent from GLFW's
+	// fullscreen list. reVC uses its dimensions as the initial mode preference.
+	ctx.modes.push_back({*desktop, VIDEOMODEEXCLUSIVE});
 	int count = 0;
 	const GLFWvidmode *modes = glfwGetVideoModes(ctx.monitor, &count);
 	for (int i = 0; i < count; i++) {

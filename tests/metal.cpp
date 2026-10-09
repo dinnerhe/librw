@@ -561,6 +561,10 @@ static void videoModes(void)
 	require(Engine::getVideoModeInfo(&mode, 0) != nullptr && mode.width == 64 &&
 			mode.height == 64 && mode.depth == 32 && mode.flags == 0,
 			"windowed mode retains requested dimensions");
+	const GLFWvidmode *desktop = glfwGetVideoMode(glfwGetPrimaryMonitor());
+	require(desktop && Engine::getVideoModeInfo(&mode, 1) != nullptr &&
+			mode.width == desktop->width && mode.height == desktop->height &&
+			mode.flags == VIDEOMODEEXCLUSIVE, "current scaled desktop is a fullscreen mode");
 	for (int i = 1; i < count; i++) {
 		require(Engine::getVideoModeInfo(&mode, i) != nullptr && mode.width > 0 &&
 				mode.height > 0 && mode.depth == 32 && mode.flags == VIDEOMODEEXCLUSIVE,

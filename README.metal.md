@@ -55,6 +55,8 @@ include the viewer UI. The viewer prints the native GPU name and model counts.
   `Engine::setMultiSamplingLevels` after `Engine::open` and before `Engine::start`.
 - Windowed and primary-monitor fullscreen video modes, selected while the
   engine is open and applied at startup. Mode changes require an engine restart.
+  The current scaled desktop resolution is included even when GLFW's fullscreen
+  enumeration omits it on macOS.
 - Texture/image upload and readback, mipmaps, sampling modes, and common
   RenderWare pixel formats. Palettized and compressed source textures are
   decoded through the existing image conversion code. GPU storage is RGBA8.
