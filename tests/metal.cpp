@@ -115,6 +115,22 @@ static void renderStates(void)
 	image = snapshot();
 	pixel(image, 32, 32, 0, 0, 255, "depth writes can be disabled");
 	image->destroy();
+	// reVC's radar writes an invisible depth mask with the depth test disabled.
+	begin({0, 255, 0, 255});
+	SetRenderState(ZTESTENABLE, 0);
+	SetRenderState(ZWRITEENABLE, 1);
+	SetRenderState(VERTEXALPHA, 1);
+	SetRenderState(SRCBLEND, BLENDZERO);
+	SetRenderState(DESTBLEND, BLENDONE);
+	rect({255, 255, 255, 255}, 0.1f, 0, 0, 32, 64);
+	SetRenderState(ZTESTENABLE, 1);
+	SetRenderState(ZWRITEENABLE, 0);
+	SetRenderState(VERTEXALPHA, 0);
+	rect({0, 0, 255, 255}, 0.2f);
+	image = snapshot();
+	pixel(image, 16, 32, 0, 255, 0, "radar mask writes depth without testing or changing color");
+	pixel(image, 48, 32, 0, 0, 255, "radar draws outside depth mask");
+	image->destroy();
 	begin();
 	SetRenderState(VERTEXALPHA, 1);
 	rect({255, 0, 0, 128});
@@ -214,7 +230,7 @@ static void immediate3D(void)
 	SetRenderState(ZTESTENABLE, 1);
 	rect({0, 0, 255, 255}, 0.9f);
 	image = snapshot();
-	pixel(image, 32, 32, 0, 0, 255, "disabled depth test also disables depth writes");
+	pixel(image, 32, 32, 255, 0, 0, "depth writes remain enabled when testing is disabled");
 	image->destroy();
 	Raster *depth = camera->zBuffer;
 	camera->zBuffer = nullptr;
@@ -235,6 +251,7 @@ static void textures(void)
 	Raster *raster = Raster::createFromImage(image);
 	image->destroy();
 	require(raster != nullptr, "texture creation");
+	require(raster->type == Raster::TEXTURE, "image conversion retains requested texture type");
 	begin();
 	SetRenderStatePtr(TEXTURERASTER, raster);
 	SetRenderState(TEXTUREFILTER, Texture::NEAREST);
@@ -310,6 +327,31 @@ static void textures(void)
 	image->destroy();
 	mip->unlock(3);
 	mip->destroy();
+}
+static void uploads(void)
+{
+	Texture *t = texture({255, 0, 0, 255});
+	begin();
+	SetRenderStatePtr(TEXTURERASTER, t->raster);
+	rect({255, 255, 255, 255}, 0.5f, 0, 0, 32, 64);
+	Image *blue = Image::create(2, 2, 32);
+	blue->allocate();
+	RGBA value = {0, 0, 255, 255};
+	for (int i = 0; i < 4; i++)
+		memcpy(blue->pixels + i * 4, &value, 4);
+	t->raster->setFromImage(blue);
+	blue->destroy();
+	rect({255, 255, 255, 255}, 0.5f, 32, 0, 32, 64);
+	// More than one arena block of small uploads must preserve the earlier draws.
+	SetRenderStatePtr(TEXTURERASTER, nullptr);
+	for (int i = 0; i < 4096; i++)
+		rect({0, 255, 0, 255}, 0.1f, 0, 0, 1, 1);
+	Image *image = snapshot();
+	pixel(image, 16, 32, 255, 0, 0, "texture upload preserves earlier draws in the same command");
+	pixel(image, 48, 32, 0, 0, 255, "later draws see queued texture upload");
+	pixel(image, 0, 0, 0, 255, 0, "transient uploads survive arena rollover");
+	image->destroy();
+	t->destroy();
 }
 static Atomic *triangle(uint32 extraFlags = 0)
 {
@@ -437,10 +479,15 @@ static void lighting(void)
 	camera->setFarPlane(4);
 	begin();
 	SetRenderState(FOGENABLE, 1);
-	SetRenderState(FOGCOLOR, 0x0000FFFF);
+	SetRenderState(FOGCOLOR, 0xFFFF0000);
 	a->render();
 	image = snapshot();
 	pixel(image, 32, 32, 77, 26, 128, "fog mixes with lit geometry", 3);
+	image->destroy();
+	SetRenderState(FOGCOLOR, 0xFFC86420);
+	a->render();
+	image = snapshot();
+	pixel(image, 32, 32, 93, 76, 100, "fog decodes RGBA bytes with red in the low byte", 3);
 	image->destroy();
 	camera->fogPlane = 1;
 	camera->setFarPlane(100);
@@ -602,6 +649,7 @@ int main(int argc, char **argv)
 	renderStates();
 	immediate3D();
 	textures();
+	uploads();
 	pipelines();
 	subrasters();
 	lighting();

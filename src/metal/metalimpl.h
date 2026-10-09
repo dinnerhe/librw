@@ -51,6 +51,10 @@ struct DisplayMode {
 	GLFWvidmode mode;
 	uint32 flags;
 };
+struct BufferSlice {
+	id<MTLBuffer> buffer;
+	size_t offset;
+};
 struct Context {
 	id<MTLDevice> device;
 	id<MTLCommandQueue> queue;
@@ -74,6 +78,8 @@ struct Context {
 	std::map<uint32, id<MTLSamplerState>> samplers;
 	id<MTLTexture> white;
 	id<MTLBuffer> identityBones;
+	id<MTLBuffer> uploadBuffer;
+	size_t uploadOffset = 0;
 	std::vector<Vertex> immediate;
 	Matrix immediateWorld;
 	uint32 immediateFlags = 0;
@@ -92,6 +98,7 @@ id<MTLTexture> makeTexture(int width, int height, MTLPixelFormat format, bool mi
 						   bool renderTarget);
 id<MTLTexture> makeMultisampleTexture(int width, int height, MTLPixelFormat format);
 void ensureCommand(void);
+BufferSlice allocateUpload(size_t size);
 void endPass(void);
 bool submit(bool wait);
 void ensurePass(Camera *camera);

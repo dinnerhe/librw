@@ -303,27 +303,24 @@ void rasterUnlock(Raster *raster, int32 level)
 				if (out[3] != 255)
 					data->hasAlpha = true;
 			}
-			// CPU writes must not race reads by previously submitted frames.
-			waitIdle();
+			// Queue the upload after earlier draws, including draws in this command.
+			// This preserves texture-write ordering without stalling the CPU for
+			// every texture or mip level streamed by the game.
+			endPass();
+			ensureCommand();
 			id<MTLTexture> texture = rasterData(raster->parent)->texture;
-			if (texture.storageMode != MTLStorageModePrivate) {
-				[texture
-					replaceRegion:MTLRegionMake2D(raster->offsetX, raster->offsetY, width, height)
-					  mipmapLevel:level
-						withBytes:rgba.data()
-					  bytesPerRow:width * 4];
-			} else {
-				ensureCommand();
+			{
 				size_t stride = (width * 4 + 255) & ~255;
-				id<MTLBuffer> staging =
-					[ctx.device newBufferWithLength:stride * height
-											options:MTLResourceStorageModeShared];
+				BufferSlice staging = allocateUpload(stride * height);
+				if (!staging.buffer)
+					return;
 				for (int row = 0; row < height; row++)
-					memcpy((uint8 *)staging.contents + row * stride, rgba.data() + row * width * 4,
+					memcpy((uint8 *)staging.buffer.contents + staging.offset + row * stride,
+						   rgba.data() + row * width * 4,
 						   width * 4);
 				id<MTLBlitCommandEncoder> enc = [ctx.command blitCommandEncoder];
-				[enc copyFromBuffer:staging
-						   sourceOffset:0
+				[enc copyFromBuffer:staging.buffer
+						   sourceOffset:staging.offset
 					  sourceBytesPerRow:stride
 					sourceBytesPerImage:stride * height
 							 sourceSize:MTLSizeMake(width, height, 1)
@@ -351,13 +348,16 @@ void rasterUnlock(Raster *raster, int32 level)
 	}
 }
 
-bool32 imageFindRasterFormat(Image *image, int32, int32 *width, int32 *height, int32 *depth,
+bool32 imageFindRasterFormat(Image *image, int32 type, int32 *width, int32 *height, int32 *depth,
 							 int32 *format)
 {
 	*width = image->width;
 	*height = image->height;
-	*depth = 32;
-	*format = Raster::C8888;
+	// Keep opaque images opaque in RenderWare state. Treating every upload as
+	// alpha-bearing enables blending and the extra GS alpha pass on world meshes.
+	bool alpha = image->hasAlpha();
+	*depth = alpha ? 32 : 24;
+	*format = (alpha ? Raster::C8888 : Raster::C888) | type;
 	return true;
 }
 bool32 rasterFromImage(Raster *raster, Image *image)

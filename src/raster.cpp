@@ -549,6 +549,7 @@ Raster::convertTexToCurrentPlatform(rw::Raster *ras)
 		newras->setFromImage(img);
 		newras->unlock(i);
 		ras->unlock(i);
+		img->destroy();
 	}
 	ras->destroy();
 	ras = newras;

@@ -69,9 +69,11 @@ include the viewer UI. The viewer prints the native GPU name and model counts.
 The renderer caches pipeline, depth/stencil, and sampler state. Up to three
 command buffers can be in flight. Draw commands retain resources, and geometry
 updates replace buffers so they cannot overwrite an earlier draw's data. CPU
-texture writes and readbacks synchronize with submitted GPU work. Texture writes
-can therefore stall the queue; frequent per-frame texture editing will need
-further optimization.
+texture writes are staged into the command buffer after earlier draws; uploads
+do not wait for GPU completion. Immediate vertices, indices, skin matrices, and
+texture staging share transient buffer blocks scoped to a command buffer.
+Readbacks synchronize with submitted GPU work. Opaque source images retain
+opaque raster formats, avoiding unnecessary blending and GS alpha passes.
 
 CMake is the supported build path for Metal. Runtime verification was performed
 on Apple M2 hardware; the managed-storage path for Intel Macs has not been run

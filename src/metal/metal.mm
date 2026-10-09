@@ -54,6 +54,31 @@ void endPass(void)
 		ctx.encoder = nil;
 	}
 }
+BufferSlice allocateUpload(size_t size)
+{
+	ensureCommand();
+	size_t alignedSize = (size + 255) & ~size_t(255);
+	if (!ctx.uploadBuffer || ctx.uploadOffset + alignedSize > ctx.uploadBuffer.length) {
+		ctx.uploadBuffer = [ctx.device newBufferWithLength:std::max(size_t(1024 * 1024), alignedSize)
+													 options:MTLResourceStorageModeShared];
+		ctx.uploadBuffer.label = @"librw transient uploads";
+		ctx.uploadOffset = 0;
+	}
+	if (!ctx.uploadBuffer) {
+		reportError("Could not allocate transient upload buffer");
+		return {nil, 0};
+	}
+	BufferSlice result = {ctx.uploadBuffer, ctx.uploadOffset};
+	ctx.uploadOffset += alignedSize;
+	return result;
+}
+static BufferSlice upload(const void *data, size_t size)
+{
+	BufferSlice result = allocateUpload(size);
+	if (result.buffer)
+		memcpy((uint8 *)result.buffer.contents + result.offset, data, size);
+	return result;
+}
 bool submit(bool wait)
 {
 	@autoreleasepool {
@@ -68,6 +93,10 @@ bool submit(bool wait)
 			}];
 			ctx.lastCommand = command;
 			ctx.command = nil;
+			// Encoded draws and blits retain their buffers. A new command gets fresh
+			// storage so CPU uploads never overwrite an earlier frame's data.
+			ctx.uploadBuffer = nil;
+			ctx.uploadOffset = 0;
 			[command commit];
 			if (wait)
 				[command waitUntilCompleted];
@@ -401,7 +430,7 @@ static id<MTLDepthStencilState> depthState(void)
 	MTLDepthStencilDescriptor *desc = [[MTLDepthStencilDescriptor alloc] init];
 	desc.depthCompareFunction = ctx.depth && ctx.states[ZTESTENABLE] ? MTLCompareFunctionLessEqual
 																	 : MTLCompareFunctionAlways;
-	desc.depthWriteEnabled = ctx.depth && ctx.states[ZTESTENABLE] && ctx.states[ZWRITEENABLE] != 0;
+	desc.depthWriteEnabled = ctx.depth && ctx.states[ZWRITEENABLE] != 0;
 	if (ctx.depth && ctx.states[STENCILENABLE]) {
 		MTLStencilDescriptor *s = [[MTLStencilDescriptor alloc] init];
 		s.stencilCompareFunction = compare(ctx.states[STENCILFUNCTION]);
@@ -491,8 +520,8 @@ static bool drawSetup(id<MTLTexture> texture, id<MTLTexture> env, Texture *envTe
 	ctx.uniforms.alpha = simd_make_float4(alpha ? ctx.states[ALPHATESTFUNC] : ALPHAALWAYS,
 										  ctx.states[ALPHATESTREF] / 255.0f, 0, 0);
 	uint32 fogColor = ctx.states[FOGCOLOR];
-	ctx.uniforms.fogColor = simd_make_float4((fogColor >> 24) & 255, (fogColor >> 16) & 255,
-											 (fogColor >> 8) & 255, fogColor & 255) /
+	ctx.uniforms.fogColor = simd_make_float4(fogColor & 255, (fogColor >> 8) & 255,
+											 (fogColor >> 16) & 255, (fogColor >> 24) & 255) /
 							255.0f;
 	ctx.uniforms.fog.z = ctx.states[FOGENABLE];
 	[ctx.encoder setVertexBytes:&ctx.uniforms length:sizeof(Uniforms) atIndex:1];
@@ -703,17 +732,17 @@ static void uninstance(rw::ObjPipeline *, Atomic *atomic)
 	destroyNativeData(atomic->geometry, 0, 0);
 	atomic->geometry->flags &= ~Geometry::NATIVE;
 }
-static id<MTLBuffer> bones(Atomic *atomic)
+static BufferSlice bones(Atomic *atomic)
 {
 	Skin *skin = ctx.skinRegistered ? Skin::get(atomic->geometry) : nullptr;
 	ctx.uniforms.flags.z = skin != nullptr;
 	if (!skin)
-		return ctx.identityBones;
+		return {ctx.identityBones, 0};
 	int count = skin->numBones;
 	if (count <= 0 || count > 256) {
 		reportError("Invalid skin bone count");
 		ctx.uniforms.flags.z = 0;
-		return ctx.identityBones;
+		return {ctx.identityBones, 0};
 	}
 	std::vector<simd_float4x4> matrices(count, matrix_identity_float4x4);
 	HAnimHierarchy *hier = Skin::getHierarchy(atomic);
@@ -731,9 +760,7 @@ static id<MTLBuffer> bones(Atomic *atomic)
 			matrices[i] = matrix(&result);
 		}
 	}
-	return [ctx.device newBufferWithBytes:matrices.data()
-								   length:count * 64
-								  options:MTLResourceStorageModeShared];
+	return upload(matrices.data(), count * sizeof(simd_float4x4));
 }
 static void environment(Material *material, Texture **texture)
 {
@@ -772,7 +799,9 @@ static void render(rw::ObjPipeline *pipe, Atomic *atomic)
 		ctx.uniforms.flags.y = 0;
 		ctx.uniforms.world = matrix(atomic->getFrame()->getLTM());
 		lights(atomic, (atomic->geometry->flags & Geometry::LIGHT) != 0);
-		id<MTLBuffer> boneBuffer = bones(atomic);
+		BufferSlice boneBuffer = bones(atomic);
+		if (!boneBuffer.buffer)
+			return;
 		for (auto &m : data->meshes) {
 			Material *material = m.material;
 			ctx.uniforms.material = atomic->geometry->flags & Geometry::MODULATE
@@ -798,7 +827,7 @@ static void render(rw::ObjPipeline *pipe, Atomic *atomic)
 							   envTexture))
 					return;
 				[ctx.encoder setVertexBuffer:data->vertices offset:0 atIndex:0];
-				[ctx.encoder setVertexBuffer:boneBuffer offset:0 atIndex:2];
+				[ctx.encoder setVertexBuffer:boneBuffer.buffer offset:boneBuffer.offset atIndex:2];
 				[ctx.encoder drawIndexedPrimitives:data->primitive
 										indexCount:m.count
 										 indexType:MTLIndexTypeUInt16
@@ -851,10 +880,10 @@ static void immediate(PrimitiveType primitive, const std::vector<Vertex> &vertic
 		RasterData *texture = rasterData((Raster *)ctx.states[TEXTURERASTER]);
 		if (!drawSetup(texture ? texture->texture : nil, nil, nullptr))
 			return;
-		auto vertexBuffer = [ctx.device newBufferWithBytes:vertices.data()
-													length:vertices.size() * sizeof(Vertex)
-												   options:MTLResourceStorageModeShared];
-		[ctx.encoder setVertexBuffer:vertexBuffer offset:0 atIndex:0];
+		BufferSlice vertexBuffer = upload(vertices.data(), vertices.size() * sizeof(Vertex));
+		if (!vertexBuffer.buffer)
+			return;
+		[ctx.encoder setVertexBuffer:vertexBuffer.buffer offset:vertexBuffer.offset atIndex:0];
 		[ctx.encoder setVertexBuffer:ctx.identityBones offset:0 atIndex:2];
 		static MTLPrimitiveType types[] = {MTLPrimitiveTypePoint,		  MTLPrimitiveTypeLine,
 										   MTLPrimitiveTypeLineStrip,	  MTLPrimitiveTypeTriangle,
@@ -879,14 +908,14 @@ static void immediate(PrimitiveType primitive, const std::vector<Vertex> &vertic
 					reportError("Immediate index out of range");
 					return;
 				}
-			auto buffer = [ctx.device newBufferWithBytes:indices
-												  length:count * 2
-												 options:MTLResourceStorageModeShared];
+			BufferSlice buffer = upload(indices, count * sizeof(uint16));
+			if (!buffer.buffer)
+				return;
 			[ctx.encoder drawIndexedPrimitives:types[primitive]
 									indexCount:count
 									 indexType:MTLIndexTypeUInt16
-								   indexBuffer:buffer
-							 indexBufferOffset:0];
+								   indexBuffer:buffer.buffer
+							 indexBufferOffset:buffer.offset];
 		} else
 			[ctx.encoder drawPrimitives:types[primitive] vertexStart:0 vertexCount:count];
 	}
