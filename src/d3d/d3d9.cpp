@@ -211,14 +211,15 @@ readNativeData(Stream *stream, int32, void *object, int32, int32)
 	for(int i = 0; i < 2; i++){
 		stream->read8(p, 16);
 		s = &header->vertexStream[i];
-		s->vertexBuffer = (void*)(uintptr)*(uint32*)p; p += 4;
+		bool hasVertices = *(uint32*)p != 0; p += 4;
+		s->vertexBuffer = nil;
 		s->offset = 0; p += 4;
 		s->stride = *(uint32*)p; p += 4;
 		s->geometryFlags = *(uint16*)p; p += 2;
 		s->managed = *p++;
 		s->dynamicLock = *p++;
 
-		if(s->vertexBuffer == nil)
+		if(!hasVertices)
 			continue;
 		// TODO: use dynamic VB when doing morphing
 		assert(s->vertexBuffer == nil);

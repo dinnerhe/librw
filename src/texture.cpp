@@ -17,6 +17,7 @@
 #include "d3d/rwd3d9.h"
 #include "d3d/rwd3dimpl.h"
 #include "gl/rwgl3.h"
+#include "metal/rwmetal.h"
 
 #define PLUGIN_ID 0
 
@@ -498,6 +499,10 @@ Texture::streamWriteNative(Stream *stream)
 		xbox::writeNativeTexture(this, stream);
 	else if(this->raster->platform == PLATFORM_GL3)
 		gl3::writeNativeTexture(this, stream);
+#ifdef RW_METAL
+	else if(this->raster->platform == PLATFORM_METAL)
+		metal::writeNativeTexture(this, stream);
+#endif
 	else
 		assert(0 && "unsupported platform");
 }
@@ -515,6 +520,10 @@ Texture::streamGetSizeNative(void)
 		return xbox::getSizeNativeTexture(this);
 	if(this->raster->platform == PLATFORM_GL3)
 		return gl3::getSizeNativeTexture(this);
+#ifdef RW_METAL
+	if(this->raster->platform == PLATFORM_METAL)
+		return metal::getSizeNativeTexture(this);
+#endif
 	assert(0 && "unsupported platform");
 	return 0;
 }

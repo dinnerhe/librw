@@ -148,6 +148,22 @@ set_target_properties(librw
         PREFIX ""
 )
 
+if(LIBRW_PLATFORM_METAL)
+    if(NOT APPLE)
+        message(FATAL_ERROR "The native Metal backend requires macOS")
+    endif()
+    find_package(glfw3 REQUIRED)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/metal/shaders.metal")
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/metal/shaders.metal" LIBRW_METAL_SHADER_SOURCE)
+    configure_file(metal/shaders.h.in "${CMAKE_CURRENT_BINARY_DIR}/metal_shaders.h" @ONLY)
+    target_sources(librw PRIVATE metal/metal.mm metal/raster.mm metal/rwmetal.h metal/metalimpl.h)
+    target_include_directories(librw PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+    target_compile_definitions(librw PUBLIC LIBRW_GLFW)
+    target_compile_options(librw PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
+    set_target_properties(librw PROPERTIES OBJCXX_STANDARD 11 OBJCXX_STANDARD_REQUIRED ON)
+    target_link_libraries(librw PUBLIC glfw PRIVATE "-framework Metal" "-framework QuartzCore" "-framework Cocoa")
+endif()
+
 if(LIBRW_PLATFORM_GL3)
     if (LIBRW_GL3_GFXLIB STREQUAL "GLFW")
         if (NOT TARGET glfw)
@@ -244,6 +260,7 @@ if(LIBRW_INSTALL)
             ps2/rwps2plg.h
         DESTINATION "${LIBRW_INSTALL_INCLUDEDIR}/src/ps2"
     )
+    install(FILES metal/rwmetal.h DESTINATION "${LIBRW_INSTALL_INCLUDEDIR}/src/metal")
     install(
         FILES
             gl/rwwdgl.h

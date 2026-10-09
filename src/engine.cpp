@@ -16,6 +16,7 @@
 #include "d3d/rwd3d8.h"
 #include "d3d/rwd3d9.h"
 #include "gl/rwgl3.h"
+#include "metal/rwmetal.h"
 #include "gl/rwwdgl.h"
 
 #define PLUGIN_ID 0
@@ -236,6 +237,9 @@ Engine::init(MemoryFunctions *memfuncs)
 	d3d9::registerPlatformPlugins();
 	wdgl::registerPlatformPlugins();
 	gl3::registerPlatformPlugins();
+#ifdef RW_METAL
+	metal::registerPlatformPlugins();
+#endif
 
 	Engine::state = Initialized;
 	return 1;
@@ -268,13 +272,20 @@ Engine::open(EngineOpenParams *p)
 	engine->device = ps2::renderdevice;
 #elif RW_GL3
 	engine->device = gl3::renderdevice;
+#elif defined(RW_METAL)
+	engine->device = metal::renderdevice;
 #elif RW_D3D9
 	engine->device = d3d::renderdevice;
 #else
 	engine->device = null::renderdevice;
 #endif
 
-	engine->device.system(DEVICEOPEN, (void*)p, 0);
+	if(!engine->device.system(DEVICEOPEN, (void*)p, 0)){
+		engine->device.system(DEVICECLOSE, nil, 0);
+		rwFree(engine);
+		engine = nil;
+		return 0;
+	}
 
 	engine->dummyDefaultPipeline = ObjPipeline::create();
 	for(uint i = 0; i < NUM_PLATFORMS; i++){
@@ -308,7 +319,8 @@ Engine::start(void)
 		return 0;
 	}
 
-	engine->device.system(DEVICEINIT, nil, 0);
+	if(!engine->device.system(DEVICEINIT, nil, 0))
+		return 0;
 
 	Engine::s_plglist.construct(engine);
 	for(uint i = 0; i < NUM_PLATFORMS; i++)

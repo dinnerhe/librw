@@ -23,6 +23,9 @@ SetClip(const ImVec4 &clip)
 	glScissor(x1, io.DisplaySize.y-y2, x2-x1, y2-y1);
 	glEnable(GL_SCISSOR_TEST);
 #endif
+#ifdef RW_METAL
+	rw::metal::setScissor(x1, y1, x2-x1, y2-y1);
+#endif
 #ifdef RW_D3D9
 	rw::d3d::d3ddevice->SetRenderState(D3DRS_SCISSORTESTENABLE, 1);
 	RECT r = { (LONG)x1, (LONG)y1, (LONG)x2, (LONG)y2 };
@@ -35,6 +38,9 @@ DisableClip(void)
 {
 #ifdef RW_OPENGL
 	glDisable(GL_SCISSOR_TEST);
+#endif
+#ifdef RW_METAL
+	rw::metal::disableScissor();
 #endif
 #ifdef RW_D3D9
 	rw::d3d::d3ddevice->SetRenderState(D3DRS_SCISSORTESTENABLE, 0);

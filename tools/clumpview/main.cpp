@@ -16,6 +16,9 @@ rw::RGBA BackgroundColor = { 64, 64, 96, 255 };
 static const char *dffPath = "files/world.dff";
 static const char *txdPath = nil;
 static const char *imagePath = "files/";
+static const char *screenshotPath = nil;
+static int frameLimit;
+static int frameCount;
 
 struct SceneGlobals
 {
@@ -32,7 +35,7 @@ static float TimeDelta;
 static void
 usage(void)
 {
-	fprintf(stderr, "usage: %s [-i imagepath] file.dff [file.txd]\n", argv0);
+	fprintf(stderr, "usage: %s [-i imagepath] [-n frames] [-s screenshot.png] file.dff [file.txd]\n", argv0);
 	exit(1);
 }
 
@@ -43,6 +46,16 @@ ParseArgs(void)
 	char **argv = sk::args.argv;
 
 	ARGBEGIN{
+	case 'n': {
+		char *end;
+		long n = strtol(EARGF(usage()), &end, 10);
+		if(*end || n <= 0 || n > 1000000) usage();
+		frameLimit = (int)n;
+		break;
+	}
+	case 's':
+		screenshotPath = EARGF(usage());
+		break;
 	case 'i':
 		imagePath = EARGF(usage());
 		break;
@@ -57,6 +70,8 @@ ParseArgs(void)
 	}
 	if(argc > 1)
 		txdPath = argv[1];
+	if(screenshotPath && frameLimit == 0)
+		frameLimit = 5;
 }
 
 /*
@@ -200,6 +215,17 @@ Initialize3D(void)
 	if(Scene.clump == nil)
 		return false;
 
+	int atomics = 0, vertices = 0, triangles = 0;
+	FORLIST(lnk, Scene.clump->atomics){
+		rw::Geometry *geo = rw::Atomic::fromClump(lnk)->geometry;
+		atomics++;
+		vertices += geo->numVertices;
+		triangles += geo->numTriangles;
+	}
+	printf("Loaded %s: %d atomics, %d vertices, %d triangles\n", dffPath, atomics, vertices, triangles);
+#ifdef RW_METAL
+	printf("Native Metal device: %s\n", rw::metal::getDeviceName());
+#endif
 	Scene.world = rw::World::create();
 
 	light = rw::Light::create(rw::Light::AMBIENT);
@@ -314,6 +340,27 @@ Render(void)
 #endif
 
 	Scene.camera->endUpdate();
+	if(frameLimit && ++frameCount >= frameLimit){
+		if(screenshotPath){
+			rw::Image *image = Scene.camera->frameBuffer->toImage();
+			if(image){
+#ifdef RW_OPENGL
+				// OpenGL readback starts at the bottom; PNG rows start at the top.
+				for(int y = 0; y < image->height/2; y++)
+					for(int x = 0; x < image->stride; x++){
+						rw::uint8 &a = image->pixels[y*image->stride+x];
+						rw::uint8 &b = image->pixels[(image->height-1-y)*image->stride+x];
+						rw::uint8 t = a; a = b; b = t;
+					}
+#endif
+				rw::writePNG(image, screenshotPath);
+				image->destroy();
+				printf("Saved %s\n", screenshotPath);
+			}else
+				fprintf(stderr, "Could not read framebuffer\n");
+		}
+		sk::globals.quit = 1;
+	}
 	Scene.camera->showRaster(0);
 }
 

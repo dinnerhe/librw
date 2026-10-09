@@ -6,7 +6,7 @@
 using namespace sk;
 using namespace rw;
 
-#ifdef RW_OPENGL
+#if defined(RW_OPENGL) || defined(RW_METAL)
 
 GLFWwindow *window;
 int keymap[GLFW_KEY_LAST+1];
@@ -223,7 +223,7 @@ main(int argc, char *argv[])
 	args.argv = argv;
 
 	if(EventHandler(INITIALIZE, nil) == EVENTERROR)
-		return 0;
+		return 1;
 
 	engineOpenParams.width = sk::globals.width;
 	engineOpenParams.height = sk::globals.height;
@@ -231,7 +231,7 @@ main(int argc, char *argv[])
 	engineOpenParams.window = &window;
 
 	if(EventHandler(RWINITIALIZE, nil) == EVENTERROR)
-		return 0;
+		return 1;
 
 	initkeymap();
 	glfwSetKeyCallback(window, keypress);

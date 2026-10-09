@@ -1,4 +1,6 @@
 add_library(librw_skeleton
+    camera.cpp
+    camera.h
     glfw.cpp
     sdl2.cpp
     sdl3.cpp
@@ -53,6 +55,7 @@ if(LIBRW_INSTALL)
     install(
         FILES
             skeleton.h
+            camera.h
         DESTINATION "${LIBRW_INSTALL_INCLUDEDIR}/skeleton"
     )
 

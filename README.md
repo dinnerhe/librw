@@ -14,6 +14,7 @@ Not all pre-instanced PS2 DFFs are supported.
 BSP is not supported at all.
 
 For rendering we have D3D9 and OpenGL (>=2.1, ES >= 2.0) backends.
+A native Metal backend is available on macOS; see [the Metal build and testing guide](README.metal.md).
 Rendering some things on the PS2 is working as a test only.
 
 # Uses

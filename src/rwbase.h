@@ -22,6 +22,10 @@
 #define RW_GLES
 #endif
 
+#ifdef RW_METAL
+#define RWDEVICE metal
+#endif
+
 #ifdef RW_D3D9
 #define RWDEVICE d3d
 #define RWHALFPIXEL
@@ -567,6 +571,7 @@ enum Platform
 
 	PLATFORM_WDGL = 11,	// WarDrum OpenGL
 	PLATFORM_GL3  = 12,	// my GL3 implementation
+	PLATFORM_METAL = 13,	// native Apple Metal
 
 	NUM_PLATFORMS,
 

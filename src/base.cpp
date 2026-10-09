@@ -31,6 +31,8 @@ int32 build = 0xFFFF;
 	int32 platform = PLATFORM_WDGL;
 #elif RW_GL3
 	int32 platform = PLATFORM_GL3;
+#elif defined(RW_METAL)
+	int32 platform = PLATFORM_METAL;
 #elif RW_D3D9
 	int32 platform = PLATFORM_D3D9;
 #else
